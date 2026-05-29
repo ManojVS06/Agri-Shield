@@ -1,0 +1,25 @@
+# Core ML
+pandas
+numpy
+xgboost
+scikit-learn
+imbalanced-learn
+optuna
+shap
+matplotlib
+seaborn
+ctgan
+
+# Backend
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+python-multipart
+httpx
+pydantic[email]
+
+# Utils
+scipy
+joblib

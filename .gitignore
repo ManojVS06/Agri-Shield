@@ -1,0 +1,38 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache / builds
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Backend sensitive files
+backend/.env
+.env
+
+# Large datasets & generated models
+data/*.csv
+models/*.pkl
+results/
+
+# Editor / IDE configs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS generated
+.DS_Store
+Thumbs.db
