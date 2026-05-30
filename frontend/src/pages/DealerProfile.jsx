@@ -2,11 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   RadialBarChart, RadialBar, BarChart, Bar,
-  XAxis, YAxis, Tooltip, ResponsiveContainer
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
-import { ArrowLeft, Lightbulb, AlertCircle, TrendingUp } from 'lucide-react';
-import { fetchDealer, fetchDealerStats, fetchTransactions } from '../api/client';
+import { ArrowLeft, Lightbulb, AlertCircle, TrendingUp, Zap, ChevronDown, ChevronUp } from 'lucide-react';
+import { fetchDealer, fetchDealerStats, fetchTransactions, fetchDealerMapData, fetchSHAP } from '../api/client';
 import RiskBadge from '../components/RiskBadge';
+
+// Import Leaflet styles and components
+import { MapContainer, TileLayer, CircleMarker, Popup, Polyline } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 
 function StatRow({ label, dealer, district, unit = '' }) {
   const ratio = district ? dealer / district : 1;
@@ -30,13 +34,187 @@ function StatRow({ label, dealer, district, unit = '' }) {
   );
 }
 
+// ── SHAP inline panel ────────────────────────────────────────────────────────
+function ShapPanel({ txnId, onClose }) {
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
+
+  useEffect(() => {
+    fetchSHAP(txnId)
+      .then(r => setData(r.data))
+      .catch(() => setError('SHAP explanation unavailable'))
+      .finally(() => setLoading(false));
+  }, [txnId]);
+
+  const containerStyle = {
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius)',
+    padding: '16px 20px',
+    marginTop: 8,
+  };
+
+  if (loading) return (
+    <div style={containerStyle}>
+      <div className="loading-wrap" style={{ padding: 0, gap: 8, fontSize: '0.82rem' }}>
+        <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+        <span>Computing SHAP values...</span>
+      </div>
+    </div>
+  );
+
+  if (error || !data?.shap_values?.length) return (
+    <div style={{ ...containerStyle, color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+      {error || 'No SHAP data available for this transaction.'}
+    </div>
+  );
+
+  const chartData = data.shap_values.map(s => ({
+    feature: s.feature.replace(/_/g, ' '),
+    impact:  parseFloat(s.shap_value.toFixed(4)),
+    value:   s.value,
+  }));
+
+  return (
+    <div style={containerStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Zap size={14} style={{ color: 'var(--accent)' }} />
+          <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+            SHAP Feature Contributions
+          </span>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            (Fraud prob: {data.fraud_probability != null ? `${(data.fraud_probability * 100).toFixed(1)}%` : '—'})
+          </span>
+        </div>
+        <button onClick={onClose}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1rem' }}>
+          ✕
+        </button>
+      </div>
+
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 24 }}>
+          <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+          <YAxis dataKey="feature" type="category" width={150}
+            tick={{ fill: '#94a3b8', fontSize: 10 }} />
+          <Tooltip
+            contentStyle={{ background: '#1a2235', border: '1px solid #00d4aa44', borderRadius: 8, fontSize: '0.75rem' }}
+            formatter={(v, _, props) => [`SHAP: ${v}  (value: ${props.payload.value})`, '']}
+          />
+          <Bar dataKey="impact" radius={[0, 4, 4, 0]}>
+            {chartData.map((d, i) => (
+              <Cell key={i} fill={d.impact >= 0 ? '#ef4444' : '#22c55e'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+
+      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 6 }}>
+        🔴 Positive SHAP = pushes toward fraud &nbsp;|&nbsp; 🟢 Negative = pushes toward normal
+      </div>
+    </div>
+  );
+}
+
+// ── GIS Map component ─────────────────────────────────────────────────────────
+function DealerFarmerMap({ mapData }) {
+  if (!mapData || mapData.lat == null || mapData.long == null) {
+    return (
+      <div style={{ height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+        No coordinates available for mapping.
+      </div>
+    );
+  }
+
+  const dealerPos = [mapData.lat, mapData.long];
+
+  return (
+    <div style={{ height: 380, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', position: 'relative' }}>
+      <MapContainer center={dealerPos} zoom={11} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        {/* Dealer Marker (Blue Circle) */}
+        <CircleMarker
+          center={dealerPos}
+          radius={12}
+          fillColor="#3b82f6"
+          color="#1e3a8a"
+          weight={2.5}
+          fillOpacity={0.85}
+        >
+          <Popup>
+            <div style={{ fontSize: '0.82rem', color: '#1e293b' }}>
+              <strong>Dealer: {mapData.dealer_name}</strong><br />
+              ID: {mapData.dealer_id}<br />
+              Location: {mapData.lat.toFixed(4)}, {mapData.long.toFixed(4)}
+            </div>
+          </Popup>
+        </CircleMarker>
+
+        {/* Farmer Markers & Connection Lines */}
+        {mapData.farmers.map(f => {
+          if (f.lat == null || f.long == null) return null;
+          const farmerPos = [f.lat, f.long];
+          const color = f.risk_level === 'High' ? '#ef4444' : f.risk_level === 'Medium' ? '#eab308' : '#22c55e';
+
+          return (
+            <React.Fragment key={f.farmer_id}>
+              {/* Connection Line */}
+              <Polyline
+                positions={[dealerPos, farmerPos]}
+                pathOptions={{
+                  color: f.risk_level === 'High' ? '#ef4444' : '#475569',
+                  weight: f.risk_level === 'High' ? 1.5 : 0.8,
+                  dashArray: f.risk_level === 'High' ? '4, 4' : '6, 6',
+                  opacity: f.risk_level === 'High' ? 0.8 : 0.4
+                }}
+              />
+
+              {/* Farmer Marker */}
+              <CircleMarker
+                center={farmerPos}
+                radius={7}
+                fillColor={color}
+                color={f.risk_level === 'High' ? '#991b1b' : '#334155'}
+                weight={1.5}
+                fillOpacity={0.75}
+              >
+                <Popup>
+                  <div style={{ fontSize: '0.8rem', color: '#1e293b' }}>
+                    <strong>Farmer: {f.name}</strong><br />
+                    ID: {f.farmer_id}<br />
+                    Location: {f.lat.toFixed(4)}, {f.long.toFixed(4)}<br />
+                    Transactions with Dealer: {f.txn_count}<br />
+                    Max Fraud Prob: {(f.max_fraud_prob * 100).toFixed(1)}%<br />
+                    Risk Level: <strong style={{ color }}>{f.risk_level}</strong>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            </React.Fragment>
+          );
+        })}
+      </MapContainer>
+    </div>
+  );
+}
+
+// ── Main Page Component ─────────────────────────────────────────────────────────
 export default function DealerProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [dealer, setDealer] = useState(null);
   const [stats,  setStats]  = useState(null);
   const [txns,   setTxns]   = useState([]);
+  const [mapData, setMapData] = useState(null);
   const [loading,setLoading]= useState(true);
+
+  const [expandedTxn, setExpandedTxn] = useState(null);
+  const [shapTxn, setShapTxn] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -44,10 +222,12 @@ export default function DealerProfile() {
       fetchDealer(id),
       fetchDealerStats(id),
       fetchTransactions({ dealer_id: id, limit: 10 }),
-    ]).then(([d, s, t]) => {
+      fetchDealerMapData(id)
+    ]).then(([d, s, t, m]) => {
       setDealer(d.data);
       setStats(s.data);
       setTxns(t.data || []);
+      setMapData(m.data);
     }).catch(console.error)
     .finally(() => setLoading(false));
   }, [id]);
@@ -58,8 +238,6 @@ export default function DealerProfile() {
   const prob = dealer.avg_fraud_prob ?? 0;
   const probPct = (prob * 100).toFixed(1);
   const riskColor = prob >= 0.6 ? '#ef4444' : prob >= 0.35 ? '#eab308' : '#22c55e';
-
-  const gaugeData = [{ name: 'Fraud Prob', value: parseFloat(probPct), fill: riskColor }];
 
   return (
     <div>
@@ -169,6 +347,18 @@ export default function DealerProfile() {
         </div>
       </div>
 
+      {/* GIS Network Map */}
+      <div className="card" style={{ marginBottom:24 }}>
+        <div className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <TrendingUp size={16} style={{ color: 'var(--accent)' }} />
+          Geographic Network of Farmers Served
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+            (Connects dealer marker with farmer coordinates dynamically colored by risk)
+          </span>
+        </div>
+        <DealerFarmerMap mapData={mapData} />
+      </div>
+
       {/* Recent transactions */}
       <div className="card">
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
@@ -181,26 +371,102 @@ export default function DealerProfile() {
             <thead>
               <tr>
                 <th>TXN ID</th><th>Farmer</th><th>Subsidy Type</th>
-                <th>Amount</th><th>Land (acres)</th><th>Fraud Prob</th><th>Risk</th>
+                <th>Amount</th><th>Land (acres)</th><th>Fraud Prob</th><th>Risk</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {txns.map(t => (
-                <tr key={t.txn_id} style={{
-                  background: (t.fraud_probability||0)>0.7 ? 'rgba(239,68,68,0.07)' :
-                              (t.fraud_probability||0)>0.35 ? 'rgba(234,179,8,0.05)' : 'transparent'
-                }}>
-                  <td className="primary">{t.txn_id}</td>
-                  <td>{t.farmer_id}</td>
-                  <td>{t.subsidy_type}</td>
-                  <td>₹{(t.subsidy_amount||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
-                  <td>{t.land_size_acres}</td>
-                  <td style={{ color:(t.fraud_probability||0)>0.6?'#ef4444':(t.fraud_probability||0)>0.35?'#eab308':'#22c55e', fontWeight:600 }}>
-                    {t.fraud_probability != null ? `${(t.fraud_probability*100).toFixed(1)}%` : '—'}
-                  </td>
-                  <td><RiskBadge level={t.risk_level} /></td>
-                </tr>
-              ))}
+              {txns.map(t => {
+                const prob = t.fraud_probability || 0;
+                const isSuspicious = prob > 0.7;
+                const isMedium = prob > 0.35;
+                const isExpanded = expandedTxn === t.txn_id;
+                const shapOpen = shapTxn === t.txn_id;
+
+                const toggleExpand = (txnId) => {
+                  setExpandedTxn(prev => (prev === txnId ? null : txnId));
+                  setShapTxn(null);
+                };
+
+                const toggleShap = (e, txnId) => {
+                  e.stopPropagation();
+                  setShapTxn(prev => (prev === txnId ? null : shapTxn === txnId ? null : txnId));
+                };
+
+                return (
+                  <React.Fragment key={t.txn_id}>
+                    <tr
+                      onClick={() => toggleExpand(t.txn_id)}
+                      style={{
+                        cursor: 'pointer',
+                        background: isSuspicious ? 'rgba(239,68,68,0.07)' :
+                                    isMedium     ? 'rgba(234,179,8,0.05)' : 'transparent',
+                        borderLeft: isSuspicious ? '3px solid var(--red)' :
+                                    isMedium     ? '3px solid var(--yellow)' : '3px solid transparent',
+                      }}
+                    >
+                      <td className="primary">{t.txn_id}</td>
+                      <td>{t.farmer_id}</td>
+                      <td>{t.subsidy_type}</td>
+                      <td>₹{(t.subsidy_amount||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
+                      <td style={{ color: (t.land_size_acres || 0) < 0.1 ? '#ef4444' : 'var(--text-secondary)' }}>
+                        {t.land_size_acres}
+                      </td>
+                      <td style={{ color: prob > 0.6 ? '#ef4444' : prob > 0.35 ? '#eab308' : '#22c55e', fontWeight: 600 }}>
+                        {prob ? `${(prob * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td><RiskBadge level={t.risk_level} /></td>
+                      <td onClick={e => e.stopPropagation()}>
+                        {isExpanded && (
+                          <button
+                            title="Explain with SHAP"
+                            onClick={e => toggleShap(e, t.txn_id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              background: shapOpen ? 'var(--accent)' : 'var(--bg-secondary)',
+                              color: shapOpen ? '#000' : 'var(--accent)',
+                              border: `1px solid var(--accent)`,
+                              borderRadius: 6, padding: '3px 8px',
+                              fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600,
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <Zap size={11} /> SHAP
+                            {shapOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={8} style={{ padding: '0 16px 16px', background: 'var(--bg-secondary)' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, paddingTop: 12 }}>
+                            {[
+                              ['Season',           t.season],
+                              ['Crop Type',        t.crop_type],
+                              ['Payment Mode',     t.payment_mode],
+                              ['Transaction Hour', `${t.transaction_hour}:00`],
+                              ['Distance (km)',    t.distance_farmer_dealer],
+                              ['Subsidy/Acre',     t.land_size_acres > 0.05
+                                ? `₹${((t.subsidy_amount || 0) / t.land_size_acres).toFixed(0)}`
+                                : 'N/A (zero land)'],
+                              ['Fraud Reason',     t.fraud_reason || 'Normal'],
+                              ['Rule Score',       t.rule_score ?? '—'],
+                            ].map(([k, v]) => (
+                              <div key={k}>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{k}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>{v ?? '—'}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {shapOpen && <ShapPanel txnId={t.txn_id} onClose={() => setShapTxn(null)} />}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

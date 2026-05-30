@@ -22,6 +22,7 @@ export const searchDealers        = (q)        => API.get('/api/dealers/search',
 export const fetchDealers         = (params)   => API.get('/api/dealers', { params });
 export const fetchDealer          = (id)       => API.get(`/api/dealers/${id}`);
 export const fetchDealerStats     = (id)       => API.get(`/api/dealers/${id}/stats`);
+export const fetchDealerMapData    = (id)       => API.get(`/api/dealers/${id}/map-data`);
 
 // Transactions
 export const fetchTransactions    = (params)   => API.get('/api/transactions', { params });

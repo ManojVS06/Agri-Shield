@@ -102,3 +102,54 @@ def get_dealer_stats(dealer_id: int, db: Session = Depends(get_db)):
         "dealer_fraud_rate":   round(sum(t.is_fraud for t in txns) / max(len(txns),1) * 100, 2),
         "district_fraud_rate": round(sum(t.is_fraud for t in dist_txns) / max(len(dist_txns),1) * 100, 2),
     }
+
+
+@router.get("/{dealer_id}/map-data")
+def get_dealer_map_data(dealer_id: int, db: Session = Depends(get_db)):
+    dealer = db.query(models.Dealer).filter(models.Dealer.dealer_id == dealer_id).first()
+    if not dealer:
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Dealer {dealer_id} not found")
+
+    # Join transactions and farmers to extract unique coordinates
+    results = (
+        db.query(
+            models.Farmer.farmer_id,
+            models.Farmer.name,
+            models.Farmer.farmer_location_lat,
+            models.Farmer.farmer_location_long,
+            func.count(models.Transaction.id).label("txn_count"),
+            func.max(models.Transaction.fraud_probability).label("max_fraud_prob")
+        )
+        .join(models.Transaction, models.Transaction.farmer_id == models.Farmer.farmer_id)
+        .filter(models.Transaction.dealer_id == dealer_id)
+        .group_by(
+            models.Farmer.farmer_id,
+            models.Farmer.name,
+            models.Farmer.farmer_location_lat,
+            models.Farmer.farmer_location_long
+        )
+        .all()
+    )
+
+    farmers_list = []
+    for r in results:
+        prob = float(r.max_fraud_prob) if r.max_fraud_prob is not None else 0.0
+        risk = "High" if prob >= 0.6 else "Medium" if prob >= 0.35 else "Low"
+        farmers_list.append({
+            "farmer_id": r.farmer_id,
+            "name": r.name,
+            "lat": float(r.farmer_location_lat) if r.farmer_location_lat else None,
+            "long": float(r.farmer_location_long) if r.farmer_location_long else None,
+            "txn_count": r.txn_count,
+            "risk_level": risk,
+            "max_fraud_prob": prob
+        })
+
+    return {
+        "dealer_id": dealer.dealer_id,
+        "dealer_name": dealer.dealer_name,
+        "lat": float(dealer.dealer_location_lat) if dealer.dealer_location_lat else None,
+        "long": float(dealer.dealer_location_long) if dealer.dealer_location_long else None,
+        "farmers": farmers_list
+    }
