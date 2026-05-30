@@ -28,6 +28,8 @@ export const fetchDealerMapData    = (id)       => API.get(`/api/dealers/${id}/m
 export const fetchTransactions    = (params)   => API.get('/api/transactions', { params });
 export const fetchHighRiskTxns    = ()         => API.get('/api/transactions/high-risk/list');
 export const fetchSHAP            = (txnId)    => API.get(`/api/transactions/${txnId}/shap`);
+export const fetchTransactionExplanation = (txnId) => API.get(`/api/transactions/${txnId}/explanation`);
+
 
 // Farmers
 export const fetchFarmers         = (params)   => API.get('/api/farmers', { params });

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Zap, ChevronDown, ChevronUp } from 'lucide-react';
+import { Zap, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { fetchTransactions, fetchSHAP } from '../api/client';
 import RiskBadge from '../components/RiskBadge';
+import AiExplanationPanel from '../components/AiExplanationPanel';
+
 
 // ── SHAP inline panel ────────────────────────────────────────────────────────
 function ShapPanel({ txnId, onClose }) {
@@ -98,6 +100,8 @@ export default function Transactions() {
   const [loading,   setLoading]  = useState(true);
   const [expanded,  setExpanded] = useState(null);
   const [shapTxn,   setShapTxn]  = useState(null);
+  const [hiddenExplanations, setHiddenExplanations] = useState({});
+
 
   useEffect(() => {
     fetchTransactions({ dealer_id: dealerId || undefined, limit: 300 })
@@ -107,7 +111,13 @@ export default function Transactions() {
   }, [dealerId]);
 
   const toggleExpand = (txnId) => {
-    setExpanded(prev => (prev === txnId ? null : txnId));
+    setExpanded(prev => {
+      const nextVal = prev === txnId ? null : txnId;
+      if (nextVal !== null) {
+        setHiddenExplanations(prevHidden => ({ ...prevHidden, [txnId]: false }));
+      }
+      return nextVal;
+    });
     setShapTxn(null);
   };
 
@@ -181,22 +191,43 @@ export default function Transactions() {
                     <td><RiskBadge level={t.risk_level} /></td>
                     <td onClick={e => e.stopPropagation()}>
                       {isExpanded && (
-                        <button
-                          title="Explain with SHAP"
-                          onClick={e => toggleShap(e, t.txn_id)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4,
-                            background: shapOpen ? 'var(--accent)' : 'var(--bg-secondary)',
-                            color: shapOpen ? '#000' : 'var(--accent)',
-                            border: `1px solid var(--accent)`,
-                            borderRadius: 6, padding: '3px 8px',
-                            fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600,
-                            transition: 'all 0.2s',
-                          }}
-                        >
-                          <Zap size={11} /> SHAP
-                          {shapOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                        </button>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <button
+                            title="AI Automated Reasoning"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setHiddenExplanations(prev => ({ ...prev, [t.txn_id]: !prev[t.txn_id] }));
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              background: !hiddenExplanations[t.txn_id] ? 'var(--accent)' : 'var(--bg-secondary)',
+                              color: !hiddenExplanations[t.txn_id] ? '#000' : 'var(--accent)',
+                              border: '1px solid var(--accent)',
+                              borderRadius: 6, padding: '3px 8px',
+                              fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600,
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <Sparkles size={11} /> AI Explain
+                          </button>
+
+                          <button
+                            title="Explain with SHAP"
+                            onClick={e => toggleShap(e, t.txn_id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              background: shapOpen ? 'var(--accent)' : 'var(--bg-secondary)',
+                              color: shapOpen ? '#000' : 'var(--accent)',
+                              border: `1px solid var(--accent)`,
+                              borderRadius: 6, padding: '3px 8px',
+                              fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600,
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <Zap size={11} /> SHAP
+                            {shapOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -223,6 +254,13 @@ export default function Transactions() {
                             </div>
                           ))}
                         </div>
+
+                        {!hiddenExplanations[t.txn_id] && (
+                          <AiExplanationPanel 
+                            txnId={t.txn_id} 
+                            onClose={() => setHiddenExplanations(prev => ({ ...prev, [t.txn_id]: true }))} 
+                          />
+                        )}
 
                         {shapOpen && <ShapPanel txnId={t.txn_id} onClose={() => setShapTxn(null)} />}
                       </td>
