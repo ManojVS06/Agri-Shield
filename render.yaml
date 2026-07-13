@@ -32,10 +32,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: agrishield-backend
-          property: host
+        value: https://agrishield-backend-numu.onrender.com
 
 databases:
   # ── Managed PostgreSQL Database ──────────────────────────────────────────
