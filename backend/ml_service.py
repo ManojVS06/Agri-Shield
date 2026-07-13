@@ -10,7 +10,7 @@ import pandas as pd
 # Allow importing engineer_features from src/
 SRC_DIR = Path(__file__).parent.parent / "src"
 sys.path.append(str(SRC_DIR))
-from train_xgboost_model import engineer_features  # noqa: E402
+from features import engineer_features  # noqa: E402
 
 
 class MLService:
