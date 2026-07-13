@@ -74,9 +74,20 @@ app.add_middleware(APIKeyMiddleware)
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 def startup_event():
-    # Auto-create all tables (idempotent)
-    Base.metadata.create_all(bind=engine)
-    print("[DB] Tables ensured.")
+    import time
+    # Auto-create all tables (idempotent with retry logic for cloud startup)
+    max_retries = 10
+    for i in range(max_retries):
+        try:
+            Base.metadata.create_all(bind=engine)
+            print("[DB] Connection successful. Tables ensured.")
+            break
+        except Exception as e:
+            if i == max_retries - 1:
+                print(f"[DB] ERROR: Could not connect to database after {max_retries} attempts: {e}")
+                raise e
+            print(f"[DB] Database not ready yet (attempt {i+1}/{max_retries}), retrying in 3s... (Error: {e})")
+            time.sleep(3)
 
     model_path = Path(os.getenv(
         "MODEL_PATH",

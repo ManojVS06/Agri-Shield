@@ -21,7 +21,7 @@ backend/.env
 
 # Large datasets & generated models
 data/*.csv
-models/*.pkl
+# models/*.pkl (allow model tracking for docker build)
 results/
 
 # Editor / IDE configs
