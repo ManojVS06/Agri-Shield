@@ -2,7 +2,7 @@ services:
   # ── FastAPI Backend Web Service ──────────────────────────────────────────
   - type: web
     name: agrishield-backend
-    env: docker
+    runtime: docker
     dockerfilePath: Dockerfile.backend
     dockerContext: .
     plan: free
@@ -21,8 +21,9 @@ services:
         value: "*"  # Allows the static site to communicate with the API
 
   # ── React Frontend Static Site ────────────────────────────────────────────
-  - type: static
+  - type: web
     name: agrishield-frontend
+    runtime: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     plan: free
