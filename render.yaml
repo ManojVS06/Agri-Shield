@@ -21,11 +21,10 @@ services:
         value: "*"  # Allows the static site to communicate with the API
 
   # ── React Frontend Static Site ────────────────────────────────────────────
-  - type: web
+  - type: static
     name: agrishield-frontend
-    env: static
     buildCommand: cd frontend && npm install && npm run build
-    publishPath: frontend/dist
+    staticPublishPath: frontend/dist
     plan: free
     routes:
       - type: rewrite
@@ -42,4 +41,4 @@ databases:
   # ── Managed PostgreSQL Database ──────────────────────────────────────────
   - name: agrishield-db
     plan: free
-    postgresDatabaseName: agri_fraud
+    databaseName: agri_fraud
