@@ -33,6 +33,8 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://agrishield-backend-numu.onrender.com
+      - key: VITE_API_KEY
+        value: agrishield-dev-2026
 
 databases:
   # ── Managed PostgreSQL Database ──────────────────────────────────────────
